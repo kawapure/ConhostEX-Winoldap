@@ -227,6 +227,9 @@ private:
     bool _fCopyColor;
     bool _fEnableBuiltinGlyphs = true;
 
+    // Unique properties for Winoldap fork:
+    bool _fShowToolbar = true;
+
     // this is used for the special STARTF_USESIZE mode.
     bool _fUseWindowSizePixels;
     COORD _dwWindowSizePixels;

@@ -48,4 +48,21 @@ Author(s):
 #define ID_CONSOLE_FINDDOWN     604
 #define ID_CONSOLE_FINDREGEX    605
 
+// Copied from Host project, which we currently assume we're building into.
+// BITMAP IDs
+#define IDB_TOOL16              700
+#define IDB_TOOLSHADOW16        702
+#define IDB_TOOL24              703
+#define IDB_TOOLSHADOW24        704
+
+// Indices for toolbar icons:
+#define ID_TOOLBAR_SELECT       0
+#define ID_TOOLBAR_COPY         1
+#define ID_TOOLBAR_PASTE        2
+#define ID_TOOLBAR_FONTS        3
+#define ID_TOOLBAR_PROPERTIES   4
+#define ID_TOOLBAR_FULLSCREEN   5
+#define ID_TOOLBAR_FOREGROUND   6
+#define ID_TOOLBAR_BACKGROUND   7
+
 // clang-format on

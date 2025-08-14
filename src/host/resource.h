@@ -51,4 +51,10 @@ Author(s):
 #define ID_CONSOLE_FINDDOWN     604
 #define ID_CONSOLE_FINDREGEX    605
 
+// BITMAP IDs
+#define IDB_TOOL16              700
+#define IDB_TOOLSHADOW16        702
+#define IDB_TOOL24              703
+#define IDB_TOOLSHADOW24        704
+
 // clang-format on

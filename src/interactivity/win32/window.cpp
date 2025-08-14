@@ -34,18 +34,24 @@
 #include "../interactivity/win32/windowUiaProvider.hpp"
 #include <uxtheme.h>
 #include <dwmapi.h>
+#include <CommCtrl.h>
 
 // I can't find the linker options in the project properties.
 #pragma comment(lib, "uxtheme.lib")
 #pragma comment(lib, "dwmapi.lib")
+#pragma comment(lib, "comctl32.lib")
 
 // The following default masks are used in creating windows
 // Make sure that these flags match when switching to fullscreen and back
-#define CONSOLE_WINDOW_FLAGS (WS_OVERLAPPEDWINDOW | WS_HSCROLL | WS_VSCROLL)
-#define CONSOLE_WINDOW_EX_FLAGS (WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE | WS_EX_ACCEPTFILES | WS_EX_APPWINDOW | WS_EX_LAYERED)
+#define CONSOLE_WINDOW_FLAGS (WS_HSCROLL | WS_VSCROLL | WS_CHILD | WS_VISIBLE)
+#define CONSOLE_WINDOW_EX_FLAGS (WS_EX_CLIENTEDGE | WS_EX_WINDOWEDGE | WS_EX_ACCEPTFILES)
+
+#define CONSOLE_WINDOW_PARENT_FLAGS (WS_OVERLAPPEDWINDOW)
+#define CONSOLE_WINDOW_PARENT_EX_FLAGS (WS_EX_ACCEPTFILES | WS_EX_APPWINDOW | WS_EX_WINDOWEDGE)
 
 // Window class name
-#define CONSOLE_WINDOW_CLASS (L"ConsoleWindowClass")
+#define CONSOLE_WINDOW_PARENT_CLASS (L"tty") // 9x name.
+#define CONSOLE_WINDOW_CLASS (L"ConsoleWindowClass") // On 9x, this was "ttyGrab", but for compatibility I will keep it as the NT name.
 
 using namespace Microsoft::Console::Interactivity::Win32;
 using namespace Microsoft::Console::Types;
@@ -53,6 +59,7 @@ using namespace Microsoft::Console::Interactivity;
 using namespace Microsoft::Console::Render;
 
 ATOM Window::s_atomWindowClass = 0;
+ATOM Window::s_atomTtyClass = 0;
 
 Window::Window() :
     _fIsInFullscreen(false),
@@ -130,7 +137,20 @@ Window::~Window()
     // Only register if we haven't already registered
     if (s_atomWindowClass == 0)
     {
-        // Prepare window class structure
+        // Prepare "tty" (MS-DOS Prompt) parent window class structure
+        WNDCLASSEX wcTty = { 0 };
+        wcTty.cbSize = sizeof(WNDCLASSEX);
+        wcTty.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC | CS_DBLCLKS;
+        wcTty.lpfnWndProc = s_TtyWndProc;
+        wcTty.cbClsExtra = 0;
+        wcTty.cbWndExtra = GWL_CONSOLE_WNDALLOC;
+        wcTty.hInstance = nullptr;
+        wcTty.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+        wcTty.hbrBackground = nullptr; // We don't want the background painted. It will cause flickering.
+        wcTty.lpszMenuName = nullptr;
+        wcTty.lpszClassName = CONSOLE_WINDOW_PARENT_CLASS;
+
+        // Prepare "ConsoleWindowClass" (NT console) class structure
         WNDCLASSEX wc = { 0 };
         wc.cbSize = sizeof(WNDCLASSEX);
         wc.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC | CS_DBLCLKS;
@@ -148,9 +168,10 @@ Window::~Window()
 
         if (SUCCEEDED_NTSTATUS(status))
         {
+            s_atomTtyClass = RegisterClassExW(&wcTty);
             s_atomWindowClass = RegisterClassExW(&wc);
 
-            if (s_atomWindowClass == 0)
+            if (s_atomWindowClass == 0 || s_atomTtyClass == 0)
             {
                 const auto gle = GetLastError();
                 status = NTSTATUS_FROM_WIN32(gle);
@@ -244,6 +265,34 @@ void Window::_UpdateSystemMetrics() const
         // Save reference to settings
         _pSettings = pSettings;
 
+        bool fUseClassicTheme = false;
+        wil::unique_hkey hConsoleSubKey;
+        LONG lStatus = RegOpenKeyExW(HKEY_CURRENT_USER, L"Console", 0, KEY_READ, &hConsoleSubKey);
+        if (ERROR_SUCCESS == lStatus)
+        {
+            DWORD dwValue;
+            DWORD dwType;
+            DWORD cbValue = sizeof(dwValue);
+            lStatus = RegQueryValueExW(hConsoleSubKey.get(),
+                                       L"ClassicTheme",
+                                       nullptr,
+                                       &dwType,
+                                       (PBYTE)&dwValue,
+                                       &cbValue);
+
+            if (ERROR_SUCCESS == lStatus &&
+                dwType == REG_DWORD &&
+                cbValue == sizeof(dwValue))
+            {
+                fUseClassicTheme = dwValue != 0;
+            }
+        }
+
+        if (fUseClassicTheme)
+        {
+            SetThemeAppProperties(0);
+        }
+
         // Figure out coordinates and how big to make the window from the desired client viewport size
         // Put left, top, right and bottom into rectProposed for checking against monitor screens below
         til::rect rectProposed = { pSettings->GetWindowOrigin().width, pSettings->GetWindowOrigin().height, 0, 0 };
@@ -292,16 +341,134 @@ void Window::_UpdateSystemMetrics() const
         const std::wstring title{ gci.GetTitle() };
 
         // Attempt to create window
-        auto hWnd = CreateWindowExW(
-            CONSOLE_WINDOW_EX_FLAGS,
-            CONSOLE_WINDOW_CLASS,
-            title.c_str(),
-            CONSOLE_WINDOW_FLAGS,
+        _hWndDosPrompt = CreateWindowExW(
+            CONSOLE_WINDOW_PARENT_EX_FLAGS,
+            CONSOLE_WINDOW_PARENT_CLASS,
+            L"MS-DOS Prompt", // Temp; original was: title.c_str(),
+            CONSOLE_WINDOW_PARENT_FLAGS,
             WI_IsFlagSet(gci.Flags, CONSOLE_AUTO_POSITION) ? CW_USEDEFAULT : rectProposed.left,
             rectProposed.top, // field is ignored if CW_USEDEFAULT was chosen above
             rectProposed.width(),
             rectProposed.height(),
             HWND_DESKTOP,
+            nullptr,
+            nullptr,
+            this // Shared with the ConsoleWindowClass for convenience.
+        );
+
+        if (_hWndDosPrompt == nullptr)
+        {
+            const auto gle = GetLastError();
+            LOG_WIN32_MSG(gle, "Failed to create the top-level MS-DOS Prompt window.");
+            status = NTSTATUS_FROM_WIN32(gle);
+        }
+
+        wil::unique_hdc_window shdcDesktop(GetDC(HWND_DESKTOP));
+
+        HGDIOBJ hfCombobox = GetStockObject(DEFAULT_GUI_FONT);
+        SelectObject(shdcDesktop.get(), hfCombobox);
+        SIZE sizeComboboxText;
+        GetTextExtentPointW(shdcDesktop.get(), L"0", 1, &sizeComboboxText);
+        int cxComboBox = (sizeComboboxText.cx << 3) + 21 + (2 * GetSystemMetrics(SM_CXEDGE)) + (3 * GetSystemMetrics(SM_CXBORDER)) + GetSystemMetrics(SM_CXVSCROLL);
+        shdcDesktop.reset();
+
+        _hWndToolbar = CreateWindowExW(
+            0,
+            TOOLBARCLASSNAME,
+            nullptr,
+            WS_CHILD | WS_CLIPSIBLINGS | TBSTYLE_TOOLTIPS | TBSTYLE_SEP,
+            0, 0, 100, 30,
+            _hWndDosPrompt,
+            NULL,
+            nullptr,
+            nullptr
+        );
+
+        if (_hWndToolbar == nullptr)
+        {
+            const auto gle = GetLastError();
+            LOG_WIN32_MSG(gle, "Failed to create the toolbar.");
+            status = NTSTATUS_FROM_WIN32(gle);
+        }
+
+        _hilToolbar = ImageList_LoadBitmap(ServiceLocator::LocateGlobals().hInstance,
+            MAKEINTRESOURCE(IDB_TOOL16),
+            16,
+            0,
+            CLR_DEFAULT 
+        );
+        SendMessageW(_hWndToolbar, TB_SETIMAGELIST, 0, (LPARAM)_hilToolbar);
+
+        // TODO: I don't think this is quite right.
+        _hilToolbarShadow = ImageList_LoadBitmap(ServiceLocator::LocateGlobals().hInstance,
+            MAKEINTRESOURCE(IDB_TOOLSHADOW16),
+            16,
+            0,
+            CLR_DEFAULT 
+        );
+        SendMessageW(_hWndToolbar, TB_SETDISABLEDIMAGELIST, 0, (LPARAM)_hilToolbarShadow);
+
+        TBBUTTON rgTbButtons[] = {
+            // Separator the size of the combobox + 8 pixels
+            { cxComboBox + 8, -1, TBSTATE_ENABLED, BTNS_SEP, 0, { 0 }, 0, 0 },
+
+            // Regular buttons:
+            { ID_TOOLBAR_SELECT, 0, TBSTATE_ENABLED, BTNS_CHECK, { 0 }, 0, (INT_PTR)L"Test" },
+            { ID_TOOLBAR_COPY, 1, TBSTATE_ENABLED, 0, { 0 }, 0, 0 },
+            { ID_TOOLBAR_PASTE, 2, TBSTATE_ENABLED, 0, { 0 }, 0, 0 },
+            { 0, NULL, 0, BTNS_SEP, 0, { 0 }, 0, 0 },
+            { ID_TOOLBAR_FULLSCREEN, 5, TBSTATE_ENABLED, 0, { 0 }, 0, 0 },
+            { 0, NULL, 0, BTNS_SEP, 0, { 0 }, 0, 0 },
+            { ID_TOOLBAR_PROPERTIES, 4, TBSTATE_ENABLED, 0, { 0 }, 0, 0 },
+            { ID_TOOLBAR_FOREGROUND, 6, TBSTATE_ENABLED, 0, { 0 }, 0, 0 },
+            { 0, NULL, 0, BTNS_SEP, 0, { 0 }, 0, 0 },
+            { ID_TOOLBAR_FONTS, 3, TBSTATE_ENABLED, 0, { 0 }, 0, 0 },
+        };
+
+        SendMessageW(_hWndToolbar, TB_SETMAXTEXTROWS, 0, 0);
+        SendMessageW(_hWndToolbar, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+        SendMessageW(_hWndToolbar, TB_ADDBUTTONSW, ARRAYSIZE(rgTbButtons), (LPARAM)&rgTbButtons);
+        SendMessageW(_hWndToolbar, TB_AUTOSIZE, 0, 0);
+
+        ShowWindow(_hWndToolbar, SW_SHOW);
+
+        _hWndCombobox = CreateWindowExW(
+            0,
+            WC_COMBOBOXW,
+            nullptr,
+            WS_CHILD | WS_BORDER | WS_VSCROLL | CBS_SIMPLE | CBS_DROPDOWN | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS,
+            0,
+            0,
+            cxComboBox,
+            164,
+            _hWndToolbar,
+            NULL,
+            nullptr,
+            nullptr);
+
+        ShowWindow(_hWndCombobox, SW_SHOW);
+
+        if (_hWndCombobox == nullptr)
+        {
+            const auto gle = GetLastError();
+            LOG_WIN32_MSG(gle, "Failed to create the combobox.");
+            status = NTSTATUS_FROM_WIN32(gle);
+        }
+
+        RECT rcToolbar;
+        ::GetWindowRect(_hWndToolbar, &rcToolbar);
+        MapWindowPoints(HWND_DESKTOP, _hWndDosPrompt, (POINT*)&rcToolbar, 2);
+
+        auto hWnd = CreateWindowExW(
+            CONSOLE_WINDOW_EX_FLAGS,
+            CONSOLE_WINDOW_CLASS,
+            title.c_str(),
+            CONSOLE_WINDOW_FLAGS,
+            0,
+            rcToolbar.bottom,
+            0,
+            0,
+            _hWndDosPrompt,
             nullptr,
             nullptr,
             this // handle to this window class, passed to WM_CREATE to help dispatching to this instance
@@ -310,37 +477,8 @@ void Window::_UpdateSystemMetrics() const
         if (hWnd == nullptr)
         {
             const auto gle = GetLastError();
-            LOG_WIN32_MSG(gle, "CreateWindow failed");
+            LOG_WIN32_MSG(gle, "Failed to create the console window.");
             status = NTSTATUS_FROM_WIN32(gle);
-        }
-
-        bool fUseClassicTheme = false;
-        wil::unique_hkey hConsoleSubKey;
-        LONG lStatus = RegOpenKeyExW(HKEY_CURRENT_USER, L"Console", 0, KEY_READ, &hConsoleSubKey);
-        if (ERROR_SUCCESS == lStatus)
-        {
-            DWORD dwValue;
-            DWORD dwType;
-            DWORD cbValue = sizeof(dwValue);
-            lStatus = RegQueryValueExW(hConsoleSubKey.get(),
-                                       L"ClassicTheme",
-                                       nullptr,
-                                       &dwType,
-                                       (PBYTE)&dwValue,
-                                       &cbValue);
-
-            if (ERROR_SUCCESS == lStatus &&
-                dwType == REG_DWORD &&
-                cbValue == sizeof(dwValue))
-            {
-                fUseClassicTheme = dwValue != 0;
-            }
-        }
-
-        if (fUseClassicTheme)
-        {
-            SetWindowTheme(hWnd, L" ", L" ");
-            SetThemeAppProperties(STAP_ALLOW_NONCLIENT);
         }
 
         if (SUCCEEDED_NTSTATUS(status))
@@ -366,11 +504,13 @@ void Window::_UpdateSystemMetrics() const
                 ApplyWindowOpacity();
 
                 status = Menu::CreateInstance(hWnd);
+                status = Menu::CreateInstance(_hWndDosPrompt);
 
                 if (SUCCEEDED_NTSTATUS(status))
                 {
                     // Do WM_GETICON workaround. Must call WM_SETICON once or apps calling WM_GETICON will get null.
                     LOG_IF_FAILED(Icon::Instance().ApplyWindowMessageWorkaround(hWnd));
+                    LOG_IF_FAILED(Icon::Instance().ApplyWindowMessageWorkaround(_hWndDosPrompt));
 
                     // Set up the hot key for this window.
                     if (gci.GetHotKey() != 0)
@@ -432,7 +572,7 @@ void Window::_CloseWindow() const
 
     if (SUCCEEDED_NTSTATUS(status))
     {
-        ShowWindow(hWnd, wShowWindow);
+        ShowWindow(_hWndDosPrompt, wShowWindow);
 
         auto& siAttached = GetScreenInfo();
         siAttached.UpdateScrollBars();
@@ -594,7 +734,17 @@ void Window::_UpdateWindowSize(const til::size sizeNew)
                      0,
                      sizeNew.width,
                      sizeNew.height,
+                     SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+
+#if 0 // TODO:
+        SetWindowPos(_hWndDosPrompt,
+                     nullptr,
+                     0,
+                     0,
+                     sizeNew.width,
+                     sizeNew.height,
                      SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_DRAWFRAME);
+#endif
     }
 }
 
@@ -1052,10 +1202,9 @@ void Window::SetWindowOpacity(const BYTE bOpacity)
 void Window::ApplyWindowOpacity() const
 {
     const auto bAlpha = GetWindowOpacity();
-    const auto hWnd = GetWindowHandle();
 
     // See: http://msdn.microsoft.com/en-us/library/ms997507.aspx
-    SetLayeredWindowAttributes(hWnd, 0, bAlpha, LWA_ALPHA);
+    SetLayeredWindowAttributes(_hWndDosPrompt, 0, bAlpha, LWA_ALPHA);
 }
 
 // Routine Description:

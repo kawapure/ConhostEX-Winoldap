@@ -106,10 +106,26 @@ namespace Microsoft::Console::Interactivity::Win32
                                            _In_ SCREEN_INFORMATION* const pScreen);
         void _CloseWindow() const;
 
-        static ATOM s_atomWindowClass;
+        static ATOM s_atomWindowClass; // For the inner "ConsoleWindowHost" window.
+        static ATOM s_atomTtyClass;
         Settings* _pSettings;
 
+        HIMAGELIST _hilToolbar;
+        HIMAGELIST _hilToolbarShadow;
+
+        // Handle to the console window. For historical reasons, this is called _hWnd.
+        // For Winoldap larp, we need to nest this as a child of the MS-DOS Prompt in
+        // order for the toolbar to reasonably work out.
         HWND _hWnd;
+
+        // Handle to the top-level "MS-DOS Prompt" window.
+        HWND _hWndDosPrompt;
+
+        // Handle to the toolbar window at the top of the DOS prompt.
+        HWND _hWndToolbar;
+
+        // Handle to the combobox window alongside the toolbar of the DOS prompt.
+        HWND _hWndCombobox;
 
         Render::GdiEngine* pGdiEngine = nullptr;
 #if TIL_FEATURE_CONHOSTATLASENGINE_ENABLED
@@ -130,6 +146,9 @@ namespace Microsoft::Console::Interactivity::Win32
                                                          _In_ UINT uMsg,
                                                          _In_ WPARAM wParam,
                                                          _In_ LPARAM lParam);
+
+        [[nodiscard]] static LRESULT CALLBACK s_TtyWndProc(_In_ HWND hWnd, _In_ UINT Message, _In_ WPARAM wParam, _In_ LPARAM lParam);
+        [[nodiscard]] LRESULT CALLBACK TtyWndProc(_In_ HWND hWnd, _In_ UINT Message, _In_ WPARAM wParam, _In_ LPARAM lParam);
 
         // Wndproc helpers
         void _HandleDrop(const WPARAM wParam) const;

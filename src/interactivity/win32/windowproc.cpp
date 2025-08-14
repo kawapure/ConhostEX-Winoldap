@@ -115,6 +115,52 @@ static constexpr TsfDataProvider s_tsfDataProvider;
 // The static and specific window procedures for this class are contained here
 #pragma region Window Procedure
 
+[[nodiscard]] LRESULT CALLBACK Window::s_TtyWndProc(_In_ HWND hWnd, _In_ UINT Message, _In_ WPARAM wParam, _In_ LPARAM lParam)
+{
+    // Save the pointer here to the specific window instance when one is created
+    if (Message == WM_CREATE)
+    {
+        const CREATESTRUCT* const pCreateStruct = reinterpret_cast<CREATESTRUCT*>(lParam);
+
+        const auto pWindow = reinterpret_cast<Window*>(pCreateStruct->lpCreateParams);
+        SetWindowLongPtrW(hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(pWindow));
+    }
+
+    // Dispatch the message to the specific class instance
+    const auto pWindow = reinterpret_cast<Window*>(GetWindowLongPtrW(hWnd, GWLP_USERDATA));
+    if (pWindow != nullptr)
+    {
+        return pWindow->TtyWndProc(hWnd, Message, wParam, lParam);
+    }
+
+    // If we get this far, call the default window proc
+    return DefWindowProcW(hWnd, Message, wParam, lParam);
+}
+
+[[nodiscard]] LRESULT CALLBACK Window::TtyWndProc(_In_ HWND hWnd, _In_ UINT Message, _In_ WPARAM wParam, _In_ LPARAM lParam)
+{
+    switch (Message)
+    {
+        case WM_SYSCOMMAND:
+        {
+            // Share with ConsoleWindowProc.
+            return ConsoleWindowProc(hWnd, Message, wParam, lParam);
+        }
+
+        case WM_COMMAND:
+        case WM_KILLFOCUS:
+        case WM_GETDPISCALEDSIZE:
+        case WM_DROPFILES:
+        case WM_CLOSE:
+        {
+            // We forward these messages straight to the console window.
+            return SendMessageW(_hWnd, Message, wParam, lParam);
+        }
+    }
+
+    return DefWindowProcW(hWnd, Message, wParam, lParam);
+}
+
 [[nodiscard]] LRESULT CALLBACK Window::s_ConsoleWindowProc(_In_ HWND hWnd, _In_ UINT Message, _In_ WPARAM wParam, _In_ LPARAM lParam)
 {
     // Save the pointer here to the specific window instance when one is created
