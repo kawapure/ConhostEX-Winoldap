@@ -425,6 +425,18 @@ void Window::_UpdateSystemMetrics() const
             { ID_TOOLBAR_FONTS, 3, TBSTATE_ENABLED, 0, { 0 }, 0, 0 },
         };
 
+        // XXX(isabella): Common Controls v6 has a bug where the vertical padding is 0 by default.
+        // In v5, only flat toolbars have 0 vertical padding, and it's hardcoded to 2 pixels otherwise.
+        // MSDN, in its glory, lies outright: "Although values for cxBarPad and cyBarPad can be set and
+        // retrieved they currently have no effect and are not used." The source code, on the other hand,
+        // tells the full truth. The value is absolutely used and MSDN is just a liar liar pants on fire.
+        TBMETRICS tbMetrics = { 0 };
+        tbMetrics.cbSize = sizeof(tbMetrics);
+        tbMetrics.dwMask = TBMF_BARPAD;
+        SendMessageW(_hWndToolbar, TB_GETMETRICS, 0, (LPARAM)&tbMetrics);
+        tbMetrics.cyBarPad = 2; // Hardcoded to 2, like v5.
+        SendMessageW(_hWndToolbar, TB_SETMETRICS, 0, (LPARAM)&tbMetrics);
+
         SendMessageW(_hWndToolbar, TB_SETMAXTEXTROWS, 0, 0);
         SendMessageW(_hWndToolbar, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
         SendMessageW(_hWndToolbar, TB_ADDBUTTONSW, ARRAYSIZE(rgTbButtons), (LPARAM)&rgTbButtons);
