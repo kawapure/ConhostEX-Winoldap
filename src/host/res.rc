@@ -71,6 +71,14 @@ BEGIN
     ID_CONSOLE_CONTROL,  "&Properties"
     ID_CONSOLE_EDIT,     "&Edit"
     ID_CONSOLE_DEFAULTS, "&Defaults"
+
+    IDS_TB_MARK,         "Mark"
+    IDS_TB_COPY,         "Copy"
+    IDS_TB_PASTE,        "&Paste"
+    IDS_TB_FULLSCREEN,   "Full screen"
+    IDS_TB_PROPERTIES,   "Properties"
+    IDS_TB_BACKGROUND,   "Background"
+    IDS_TB_FONT,         "Font"
 END
 
 //

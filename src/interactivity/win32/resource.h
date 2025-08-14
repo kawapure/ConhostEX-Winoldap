@@ -65,4 +65,12 @@ Author(s):
 #define ID_TOOLBAR_FOREGROUND   6
 #define ID_TOOLBAR_BACKGROUND   7
 
+#define IDS_TB_MARK             0x1010
+#define IDS_TB_COPY             0x1011
+#define IDS_TB_PASTE            0x1012
+#define IDS_TB_FONT             0x1013
+#define IDS_TB_PROPERTIES       0x1014
+#define IDS_TB_FULLSCREEN       0x1015
+#define IDS_TB_BACKGROUND       0x1016
+
 // clang-format on

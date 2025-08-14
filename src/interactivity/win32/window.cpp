@@ -380,7 +380,7 @@ void Window::_UpdateSystemMetrics() const
             0, 0, 100, 30,
             _hWndDosPrompt,
             NULL,
-            nullptr,
+            ServiceLocator::LocateGlobals().hInstance,
             nullptr
         );
 
@@ -413,17 +413,28 @@ void Window::_UpdateSystemMetrics() const
             { cxComboBox + 8, -1, TBSTATE_ENABLED, BTNS_SEP, 0, { 0 }, 0, 0 },
 
             // Regular buttons:
-            { ID_TOOLBAR_SELECT, 0, TBSTATE_ENABLED, BTNS_CHECK, { 0 }, 0, (INT_PTR)L"Test" },
-            { ID_TOOLBAR_COPY, 1, TBSTATE_ENABLED, 0, { 0 }, 0, 0 },
-            { ID_TOOLBAR_PASTE, 2, TBSTATE_ENABLED, 0, { 0 }, 0, 0 },
+            { ID_TOOLBAR_SELECT, 0, TBSTATE_ENABLED, BTNS_CHECK, { 0 }, 0, IDS_TB_MARK },
+            { ID_TOOLBAR_COPY, 1, TBSTATE_ENABLED, 0, { 0 }, 0, IDS_TB_COPY },
+            { ID_TOOLBAR_PASTE, 2, TBSTATE_ENABLED, 0, { 0 }, 0, IDS_TB_PASTE },
             { 0, NULL, 0, BTNS_SEP, 0, { 0 }, 0, 0 },
-            { ID_TOOLBAR_FULLSCREEN, 5, TBSTATE_ENABLED, 0, { 0 }, 0, 0 },
+            { ID_TOOLBAR_FULLSCREEN, 5, TBSTATE_ENABLED, 0, { 0 }, 0, IDS_TB_FULLSCREEN },
             { 0, NULL, 0, BTNS_SEP, 0, { 0 }, 0, 0 },
-            { ID_TOOLBAR_PROPERTIES, 4, TBSTATE_ENABLED, 0, { 0 }, 0, 0 },
-            { ID_TOOLBAR_FOREGROUND, 6, TBSTATE_ENABLED, 0, { 0 }, 0, 0 },
+            { ID_TOOLBAR_PROPERTIES, 4, TBSTATE_ENABLED, 0, { 0 }, 0, IDS_TB_PROPERTIES },
+            { ID_TOOLBAR_FOREGROUND, 6, TBSTATE_ENABLED, 0, { 0 }, 0, IDS_TB_BACKGROUND },
             { 0, NULL, 0, BTNS_SEP, 0, { 0 }, 0, 0 },
-            { ID_TOOLBAR_FONTS, 3, TBSTATE_ENABLED, 0, { 0 }, 0, 0 },
+            { ID_TOOLBAR_FONTS, 3, TBSTATE_ENABLED, 0, { 0 }, 0, IDS_TB_FONT },
         };
+
+        // Load strings for all toolbar buttons (doesn't work with just int resources, I assume some HINSTANCE bullshit):
+        for (TBBUTTON &rTbButton : rgTbButtons)
+        {
+            LPWSTR pszString = new WCHAR[MAX_PATH];
+            LoadStringW(ServiceLocator::LocateGlobals().hInstance, (UINT)rTbButton.iString, pszString, MAX_PATH);
+            if (pszString[0])
+            {
+                rTbButton.iString = (INT_PTR)pszString;
+            }
+        }
 
         // XXX(isabella): Common Controls v6 has a bug where the vertical padding is 0 by default.
         // In v5, only flat toolbars have 0 vertical padding, and it's hardcoded to 2 pixels otherwise.

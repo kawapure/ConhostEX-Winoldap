@@ -57,4 +57,22 @@ Author(s):
 #define IDB_TOOL24              703
 #define IDB_TOOLSHADOW24        704
 
+// Indices for toolbar icons:
+#define ID_TOOLBAR_SELECT       0
+#define ID_TOOLBAR_COPY         1
+#define ID_TOOLBAR_PASTE        2
+#define ID_TOOLBAR_FONTS        3
+#define ID_TOOLBAR_PROPERTIES   4
+#define ID_TOOLBAR_FULLSCREEN   5
+#define ID_TOOLBAR_FOREGROUND   6
+#define ID_TOOLBAR_BACKGROUND   7
+
+#define IDS_TB_MARK             0x1010
+#define IDS_TB_COPY             0x1011
+#define IDS_TB_PASTE            0x1012
+#define IDS_TB_FONT             0x1013
+#define IDS_TB_PROPERTIES       0x1014
+#define IDS_TB_FULLSCREEN       0x1015
+#define IDS_TB_BACKGROUND       0x1016
+
 // clang-format on
